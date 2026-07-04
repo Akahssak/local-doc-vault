@@ -1,0 +1,269 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /*
+   * Light theme (default `:root`). The app uses high slate numbers for surfaces
+   * and low numbers for text, so the light theme REVERSES the neutral + accent
+   * scales (50<->950 …) to turn dark surfaces light and light text dark. The
+   * `brand` scale keeps its button shades saturated so white button text stays
+   * readable. RGB triplets (space-separated) feed `rgb(var(--x) / <alpha>)`.
+   */
+  :root {
+    color-scheme: light;
+
+    --slate-50: 2 6 23;
+    --slate-100: 15 23 42;
+    --slate-200: 30 41 59;
+    --slate-300: 51 65 85;
+    --slate-400: 71 85 105;
+    --slate-500: 100 116 139;
+    --slate-600: 148 163 184;
+    --slate-700: 203 213 225;
+    --slate-800: 226 232 240;
+    --slate-900: 241 245 249;
+    --slate-950: 248 250 252;
+
+    --brand-50: 238 246 255;
+    --brand-100: 21 71 225;
+    --brand-200: 24 59 182;
+    --brand-300: 28 92 245;
+    --brand-400: 89 159 255;
+    --brand-500: 51 123 255;
+    --brand-600: 28 92 245;
+    --brand-700: 21 71 225;
+    --brand-800: 24 59 182;
+    --brand-900: 25 55 143;
+    --brand-950: 20 34 87;
+
+    --emerald-50: 2 44 34;
+    --emerald-100: 6 78 59;
+    --emerald-200: 6 95 70;
+    --emerald-300: 4 120 87;
+    --emerald-400: 5 150 105;
+    --emerald-500: 16 185 129;
+    --emerald-600: 52 211 153;
+    --emerald-700: 110 231 183;
+    --emerald-800: 167 243 208;
+    --emerald-900: 209 250 229;
+    --emerald-950: 236 253 245;
+
+    --sky-50: 8 47 73;
+    --sky-100: 12 74 110;
+    --sky-200: 7 89 133;
+    --sky-300: 3 105 161;
+    --sky-400: 2 132 199;
+    --sky-500: 14 165 233;
+    --sky-600: 56 189 248;
+    --sky-700: 125 211 252;
+    --sky-800: 186 230 253;
+    --sky-900: 224 242 254;
+    --sky-950: 240 249 255;
+
+    --violet-50: 46 16 101;
+    --violet-100: 76 29 149;
+    --violet-200: 91 33 182;
+    --violet-300: 109 40 217;
+    --violet-400: 124 58 237;
+    --violet-500: 139 92 246;
+    --violet-600: 167 139 250;
+    --violet-700: 196 181 253;
+    --violet-800: 221 214 254;
+    --violet-900: 237 233 254;
+    --violet-950: 245 243 255;
+
+    --amber-50: 69 26 3;
+    --amber-100: 120 53 15;
+    --amber-200: 146 64 14;
+    --amber-300: 180 83 9;
+    --amber-400: 217 119 6;
+    --amber-500: 245 158 11;
+    --amber-600: 251 191 36;
+    --amber-700: 252 211 77;
+    --amber-800: 253 230 138;
+    --amber-900: 254 243 199;
+    --amber-950: 255 251 235;
+
+    --rose-50: 76 5 25;
+    --rose-100: 136 19 55;
+    --rose-200: 159 18 57;
+    --rose-300: 190 18 60;
+    --rose-400: 225 29 72;
+    --rose-500: 244 63 94;
+    --rose-600: 251 113 133;
+    --rose-700: 253 164 175;
+    --rose-800: 254 205 211;
+    --rose-900: 255 228 230;
+    --rose-950: 255 241 242;
+
+    --bg-glow:
+      radial-gradient(60rem 60rem at 110% -10%, rgba(51, 123, 255, 0.06), transparent 60%),
+      radial-gradient(50rem 50rem at -10% 110%, rgba(100, 116, 139, 0.1), transparent 55%);
+  }
+
+  /* Dark theme (applied when <html class="dark">). Standard Tailwind values. */
+  .dark {
+    color-scheme: dark;
+
+    --slate-50: 248 250 252;
+    --slate-100: 241 245 249;
+    --slate-200: 226 232 240;
+    --slate-300: 203 213 225;
+    --slate-400: 148 163 184;
+    --slate-500: 100 116 139;
+    --slate-600: 71 85 105;
+    --slate-700: 51 65 85;
+    --slate-800: 30 41 59;
+    --slate-900: 15 23 42;
+    --slate-950: 2 6 23;
+
+    --brand-50: 238 246 255;
+    --brand-100: 217 234 255;
+    --brand-200: 188 218 255;
+    --brand-300: 142 194 255;
+    --brand-400: 89 159 255;
+    --brand-500: 51 123 255;
+    --brand-600: 28 92 245;
+    --brand-700: 21 71 225;
+    --brand-800: 24 59 182;
+    --brand-900: 25 55 143;
+    --brand-950: 20 34 87;
+
+    --emerald-50: 236 253 245;
+    --emerald-100: 209 250 229;
+    --emerald-200: 167 243 208;
+    --emerald-300: 110 231 183;
+    --emerald-400: 52 211 153;
+    --emerald-500: 16 185 129;
+    --emerald-600: 5 150 105;
+    --emerald-700: 4 120 87;
+    --emerald-800: 6 95 70;
+    --emerald-900: 6 78 59;
+    --emerald-950: 2 44 34;
+
+    --sky-50: 240 249 255;
+    --sky-100: 224 242 254;
+    --sky-200: 186 230 253;
+    --sky-300: 125 211 252;
+    --sky-400: 56 189 248;
+    --sky-500: 14 165 233;
+    --sky-600: 2 132 199;
+    --sky-700: 3 105 161;
+    --sky-800: 7 89 133;
+    --sky-900: 12 74 110;
+    --sky-950: 8 47 73;
+
+    --violet-50: 245 243 255;
+    --violet-100: 237 233 254;
+    --violet-200: 221 214 254;
+    --violet-300: 196 181 253;
+    --violet-400: 167 139 250;
+    --violet-500: 139 92 246;
+    --violet-600: 124 58 237;
+    --violet-700: 109 40 217;
+    --violet-800: 91 33 182;
+    --violet-900: 76 29 149;
+    --violet-950: 46 16 101;
+
+    --amber-50: 255 251 235;
+    --amber-100: 254 243 199;
+    --amber-200: 253 230 138;
+    --amber-300: 252 211 77;
+    --amber-400: 251 191 36;
+    --amber-500: 245 158 11;
+    --amber-600: 217 119 6;
+    --amber-700: 180 83 9;
+    --amber-800: 146 64 14;
+    --amber-900: 120 53 15;
+    --amber-950: 69 26 3;
+
+    --rose-50: 255 241 242;
+    --rose-100: 255 228 230;
+    --rose-200: 254 205 211;
+    --rose-300: 253 164 175;
+    --rose-400: 251 113 133;
+    --rose-500: 244 63 94;
+    --rose-600: 225 29 72;
+    --rose-700: 190 18 60;
+    --rose-800: 159 18 57;
+    --rose-900: 136 19 55;
+    --rose-950: 76 5 25;
+
+    --bg-glow:
+      radial-gradient(60rem 60rem at 110% -10%, rgba(51, 123, 255, 0.12), transparent 60%),
+      radial-gradient(50rem 50rem at -10% 110%, rgba(20, 34, 87, 0.35), transparent 55%);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-slate-950 text-slate-100 antialiased;
+    background-image: var(--bg-glow);
+    background-attachment: fixed;
+  }
+
+  ::selection {
+    @apply bg-brand-500/40 text-white;
+  }
+
+  /* Slim, themed scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--slate-700)) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-slate-700/70;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-600;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-slate-800 bg-slate-900/60 backdrop-blur;
+    transition:
+      background-color 0.2s ease,
+      border-color 0.2s ease;
+  }
+
+  .btn {
+    @apply inline-flex select-none items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium
+      transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/70 disabled:cursor-not-allowed
+      disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-brand-600 text-white shadow-lg shadow-brand-950/40 hover:bg-brand-500 active:bg-brand-700;
+  }
+  .btn-ghost {
+    @apply btn border border-slate-700 bg-slate-800/40 text-slate-200 hover:border-slate-600 hover:bg-slate-800;
+  }
+  .btn-danger {
+    @apply btn border border-rose-800/60 bg-rose-950/40 text-rose-200 hover:bg-rose-900/50;
+  }
+
+  .input {
+    @apply w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100
+      placeholder:text-slate-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-800/60 px-2.5 py-1
+      text-xs text-slate-300;
+  }
+
+  .mark {
+    @apply rounded bg-amber-400/30 px-0.5 text-amber-100 ring-1 ring-amber-300/40;
+  }
+}
