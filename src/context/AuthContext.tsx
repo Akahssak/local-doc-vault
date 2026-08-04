@@ -17,6 +17,7 @@ import {
   verifyAdminPassword,
 } from '@/lib/auth/auth';
 import { hardResetVault } from '@/lib/storage/reset';
+import { autoSyncOnLoad } from '@/lib/storage/sharedFolder';
 
 export type AuthStatus = 'loading' | 'needs-setup' | 'locked' | 'unlocked';
 
@@ -38,6 +39,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true;
     (async () => {
+      // If this browser already shares an on-disk vault folder and it holds a
+      // newer copy, adopt it automatically before deciding the auth state. This
+      // is what makes multi-browser sharing feel automatic: whenever any browser
+      // pushes, the others silently catch up (password included) on next load.
+      try {
+        const sync = await autoSyncOnLoad();
+        if (!active) return;
+        if (sync.pulled) {
+          window.location.reload();
+          return;
+        }
+      } catch {
+        /* offline / permission lost — fall through to normal local boot */
+      }
       const configured = await isAdminConfigured();
       if (!active) return;
       if (!configured) setStatus('needs-setup');

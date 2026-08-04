@@ -23,9 +23,13 @@ import * as opfs from '@/lib/storage/opfs';
 
 const HANDLE_KEY = 'sharedFolderHandle';
 const NAME_KEY = 'sharedFolderName';
+const SYNCED_AT_KEY = 'sharedFolderSyncedAt';
 const SYNC_FILE = 'vault-sync.json';
+const META_FILE = 'vault-sync.meta.json';
 const ORIGINALS_DIR = 'originals';
 const SYNC_SCHEMA = 1;
+/** Marker written next to the vault so any browser can recognise it as ours. */
+const APP_MARK = 'local-doc-vault';
 
 /** The picked folder handle, with the permission methods the DOM lib omits. */
 type DirHandle = FileSystemDirectoryHandle & {
@@ -138,6 +142,14 @@ export async function pushToSharedFolder(): Promise<{ folder: string; documents:
   };
   await writeFileInDir(dir, SYNC_FILE, JSON.stringify(snapshot, null, 2));
 
+  // Tiny marker file: lets other browsers detect the vault and know how fresh
+  // it is WITHOUT parsing the whole (possibly large) snapshot on every load.
+  await writeFileInDir(
+    dir,
+    META_FILE,
+    JSON.stringify({ app: APP_MARK, schema: SYNC_SCHEMA, updatedAt: snapshot.updatedAt }),
+  );
+
   // Copy every original binary, keyed by document id (safe file name).
   const originals = await dir.getDirectoryHandle(ORIGINALS_DIR, { create: true });
   for (const doc of documents) {
@@ -167,7 +179,11 @@ async function readJsonFromDir<T>(dir: FileSystemDirectoryHandle, name: string):
  * The caller should reload the app afterwards so auth/state re-initialise.
  */
 export async function pullFromSharedFolder(): Promise<{ folder: string; documents: number }> {
-  const dir = await resolveHandle();
+  return pullUsing(await resolveHandle());
+}
+
+/** Core pull, given an already-resolved (permitted) folder handle. */
+async function pullUsing(dir: DirHandle): Promise<{ folder: string; documents: number }> {
   const snapshot = await readJsonFromDir<VaultSync>(dir, SYNC_FILE);
   if (!snapshot) {
     throw new Error('No vault found in that folder. Push from another browser first.');
@@ -208,6 +224,8 @@ export async function pullFromSharedFolder(): Promise<{ folder: string; document
   // Remember the folder on THIS browser too, so future push/pull is one click.
   await db.setSetting(HANDLE_KEY, dir);
   await db.setSetting(NAME_KEY, dir.name);
+  // Record how fresh our copy now is, so auto-sync won't pull the same data twice.
+  await db.setSetting(SYNCED_AT_KEY, snapshot.updatedAt);
 
   return { folder: dir.name, documents: snapshot.documents.length };
 }
@@ -220,4 +238,31 @@ export async function pullFromSharedFolder(): Promise<{ folder: string; document
 export async function adoptSharedFolder(): Promise<{ folder: string; documents: number }> {
   await connectSharedFolder();
   return pullFromSharedFolder();
+}
+
+/**
+ * AUTO-SYNC on app boot. If this browser already picked the shared folder and
+ * still silently holds permission, and the folder holds a NEWER vault than our
+ * last sync, pull it automatically — no clicks. This is what makes multi-browser
+ * sharing feel automatic after the one-time folder pick. Returns whether it
+ * pulled (the caller should reload when it did).
+ */
+export async function autoSyncOnLoad(): Promise<{ pulled: boolean; documents?: number }> {
+  if (!isSharedFolderSupported()) return { pulled: false };
+  const saved = await getSavedHandle();
+  if (!saved) return { pulled: false };
+
+  // Silent check only: we cannot prompt for permission without a user gesture,
+  // so if it isn't already granted we quietly skip (manual Pull still works).
+  const state = saved.queryPermission ? await saved.queryPermission({ mode: 'read' }) : 'prompt';
+  if (state !== 'granted') return { pulled: false };
+
+  const meta = await readJsonFromDir<{ app?: string; updatedAt?: string }>(saved, META_FILE);
+  if (!meta?.updatedAt || meta.app !== APP_MARK) return { pulled: false };
+
+  const localAt = await db.getSetting<string>(SYNCED_AT_KEY);
+  if (localAt && meta.updatedAt <= localAt) return { pulled: false }; // already current
+
+  const res = await pullUsing(saved);
+  return { pulled: true, documents: res.documents };
 }
