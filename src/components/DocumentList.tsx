@@ -65,6 +65,15 @@ export function DocumentList({ docs, matchCounts, onOpen, onDelete }: Props) {
               <p className="truncate text-sm font-medium text-slate-100" title={doc.fileName}>
                 {doc.fileName}
               </p>
+              {doc.company && (
+                <p
+                  className="mt-0.5 flex items-center gap-1 truncate text-[11px] text-brand-300"
+                  title={`Company folder: ${doc.company}`}
+                >
+                  <FolderIcon className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{doc.company}</span>
+                </p>
+              )}
               <p className="mt-0.5 line-clamp-2 text-xs text-slate-500">
                 {doc.preview || 'No extractable text.'}
               </p>

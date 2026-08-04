@@ -17,6 +17,7 @@ export function buildEntry(doc: StoredDocument, json?: DocumentJson): GlobalInde
   return {
     id: doc.id,
     fileName: doc.fileName,
+    company: doc.company,
     mimeType: doc.mimeType,
     ext: extOf(doc.fileName),
     size: doc.size,

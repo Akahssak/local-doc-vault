@@ -3,14 +3,29 @@
  * storage (OPFS), the metadata/content index (IndexedDB) and extraction.
  */
 import { extractDocument, makePreview } from '@/lib/pdf/extract';
+import { detectBrand, detectBrandFromText } from '@/lib/data/columns';
 import * as db from '@/lib/storage/db';
 import * as opfs from '@/lib/storage/opfs';
-import { extOf, newId, sha256Hex } from '@/lib/util';
+import { newId, sanitizeFolderName, sha256Hex } from '@/lib/util';
 import type { DocumentJson, StoredDocument } from '@/types';
 
 export interface IngestResult {
   doc: StoredDocument;
   duplicate: boolean;
+}
+
+/**
+ * Resolve the company a document belongs to. We trust the file name first
+ * (e.g. "Continental Price List.pdf"), fall back to a brand named inside the
+ * extracted text, and finally to "Unknown" — so every file is always filed
+ * under some company folder.
+ */
+function resolveCompany(fileName: string, fullText?: string): string {
+  const fromName = detectBrand(fileName);
+  const generic = !fromName || fromName === 'Unknown';
+  if (!generic) return fromName;
+  const fromText = fullText ? detectBrandFromText(fullText) : null;
+  return fromText ?? fromName ?? 'Unknown';
 }
 
 /** Store one file privately on-device and index its extracted JSON. */
@@ -21,12 +36,9 @@ export async function ingestFile(file: File): Promise<IngestResult> {
   if (existing) return { doc: existing, duplicate: true };
 
   const id = newId();
-  const opfsPath = `${id}${extOf(file.name)}`;
 
-  // 1) Persist the original bytes in the app-private OPFS vault.
-  await opfs.writeFile(opfsPath, file);
-
-  // 2) Extract structured JSON content (best effort).
+  // 1) Extract structured JSON content first (best effort). Its text also helps
+  //    us recognise which company the document belongs to.
   let json: DocumentJson | undefined;
   let status: StoredDocument['status'] = 'ready';
   let error: string | undefined;
@@ -37,10 +49,25 @@ export async function ingestFile(file: File): Promise<IngestResult> {
     error = (e as Error).message;
   }
 
+  // 2) File the document under a folder named after its company, keeping the
+  //    ORIGINAL file name. Only true name clashes get a numeric suffix.
+  const company = resolveCompany(file.name, json?.fullText);
+  const folder = sanitizeFolderName(company);
+  const storedName = await opfs.uniqueName(folder, file.name);
+  const opfsPath = `${folder}/${storedName}`;
+  const jsonPath = json ? `${opfsPath}.json` : undefined;
+
+  // 3) Persist the original bytes in the company folder…
+  await opfs.writeFile(opfsPath, file);
+  // …and write the extracted JSON right next to the source ("just below" it).
+  if (json && jsonPath) await opfs.writeJson(jsonPath, json);
+
   const doc: StoredDocument = {
     id,
     fileName: file.name,
+    company,
     opfsPath,
+    jsonPath,
     mimeType: file.type || 'application/octet-stream',
     size: file.size,
     pageCount: json?.pageCount ?? 0,
@@ -59,9 +86,10 @@ export async function ingestFile(file: File): Promise<IngestResult> {
   return { doc, duplicate: false };
 }
 
-/** Remove a document from OPFS + IndexedDB. */
+/** Remove a document (original + its JSON sidecar) from OPFS + IndexedDB. */
 export async function removeDocument(doc: StoredDocument): Promise<void> {
   await opfs.deleteFile(doc.opfsPath);
+  if (doc.jsonPath) await opfs.deleteFile(doc.jsonPath);
   await db.deleteContent(doc.id);
   await db.deleteDocumentMeta(doc.id);
 }

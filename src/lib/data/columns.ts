@@ -327,24 +327,50 @@ export function retailPrice(fields: RecordField[]): number | null {
  *      short letters-first code that survives is the pattern (Continental).
  * ------------------------------------------------------------------------ */
 
-/** ISO tyre-size code, e.g. `145/80R13`, `205/55ZR16`, `31/10.5R15`. */
-const SIZE_RE = /(\d{2,3}(?:\.\d)?)\s*\/\s*(\d{2}(?:\.\d)?)\s*(Z?R|D|B|-)\s*(\d{2}(?:\.\d)?)/i;
 /**
- * Bias / OTR / radial-without-aspect sizes that omit the "/aspect" part, e.g.
- * `12.00-24`, `7.50-16`, `10-16.5` (bias) and `10.00 R20`, `165 R14`
- * (radial). Shape: width, then a `-` (bias) or `R` (radial), then the rim.
+ * ISO / ETRTO tyre-size code with an aspect ratio, e.g. `145/80R13`,
+ * `205/55ZR16`, `295/95D20`, `80/100-17`. Shape: width `/` aspect `construction`
+ * rim. The construction letter may be `R` (radial), `ZR`, `D` (diagonal/bias
+ * belted), `B` or a bare `-` (bias), and any part may carry a decimal
+ * (`12.5/80-18`, `275/80R22.5`). The aspect allows three digits so wide
+ * motorcycle sizes like `80/100-17` and `110/90-17` are matched.
  */
-const SIZE_ALT_RE = /\b(\d{1,3}(?:\.\d{1,2})?)\s*([R-])\s*(\d{2}(?:\.\d)?)\b/i;
-/** Load index + speed symbol travelling together, digits-first, e.g. `75T`, `86 H`. */
-const LOAD_SPEED_RE = /\b\d{2,3}\s?[A-Z]{1,2}\b/g;
+const SIZE_RE = /(\d{2,3}(?:\.\d)?)\s*\/\s*(\d{2,3}(?:\.\d)?)\s*(Z?R|D|B|-)\s*(\d{2}(?:\.\d)?)/i;
+/**
+ * The same size written with SPACES instead of a slash, e.g. Bridgestone's
+ * `155 65 R12` / `155 65 R 12`. Shape: 3-digit width, 2–3-digit aspect, then the
+ * construction letter and rim.
+ */
+const SIZE_SPACED_RE = /\b(\d{3})\s+(\d{2,3})\s+(Z?R|D|B)\s*(\d{2}(?:\.\d)?)\b/i;
+/**
+ * Bias / OTR / radial / diagonal sizes that omit the "/aspect" part, e.g.
+ * `12.00-24`, `7.50-16`, `4.00-8`, `2.75-17` (bias); `10.00 R20`, `165 R14`,
+ * `11R22.5`, `195R15C` (radial); and `165 D14`, `165 D 12` (diagonal). Shape:
+ * width, then `-` / `R` / `D` / `B`, then the rim. A trailing letter such as the
+ * `C` in `195R15C` is allowed (and dropped).
+ */
+const SIZE_ALT_RE = /\b(\d{1,3}(?:\.\d{1,2})?)\s*([RDB-])\s*(\d{1,2}(?:\.\d)?)(?![\d.])/i;
+
+/** Global copies used to strip every size occurrence from a pattern cell. */
+const SIZE_RE_G = new RegExp(SIZE_RE.source, 'gi');
+const SIZE_SPACED_RE_G = new RegExp(SIZE_SPACED_RE.source, 'gi');
+const SIZE_ALT_RE_G = new RegExp(SIZE_ALT_RE.source, 'gi');
+
+/**
+ * Load index + speed symbol travelling together, digits-first, e.g. `75T`,
+ * `86 H`, `100S`, and the dual-load truck form `152/148J`.
+ */
+const LOAD_SPEED_RE = /\b\d{2,3}(?:\/\d{2,3})?\s?[A-Z]{1,2}\b/g;
 /** Header names that explicitly hold the tread pattern. */
 const PATTERN_NAME_RE = /pattern|tread|design|model|variant|series/i;
 /** A pattern code: letters first, then an optional short number, e.g. `CC6`, `VFM1`, `PC5`, `UC2`, `C5`. */
 const PATTERN_TOKEN_RE = /^[A-Z]{1,4}-?\d{1,2}$/;
 /** A family/range word: pure letters, e.g. `COMC`, `ULTC`, `AXX`. */
 const FAMILY_TOKEN_RE = /^[A-Z]{2,5}$/;
+/** Words that are never part of a tread-name (fitment / marketing / spec noise). */
+const PATTERN_NOISE_RE = /^(FR|XL|PLY|SET|EMBEDDED|RADIAL|BIAS|DOM|SV|LV|PR)$/;
 
-/** Normalise a matched size to a compact, comparable form (e.g. `145/80R13`). */
+/** Normalise a slashed size match to a compact, comparable form (`145/80R13`). */
 function normalizeSize(m: RegExpExecArray): string {
   return `${m[1]}/${m[2]}${m[3].toUpperCase()}${m[4]}`.replace(/\s+/g, '');
 }
@@ -354,16 +380,20 @@ export function extractSize(text: string): string | null {
   // Preferred, universal form first: width/aspect + rim (e.g. `145/80R13`).
   const m = SIZE_RE.exec(text);
   if (m) return normalizeSize(m);
-  // Bias / OTR / radial-without-aspect (e.g. `12.00-24`, `10.00 R20`). Guard the
-  // rim to a real tyre-rim diameter (8"–63") so a stray dash — a grade suffix
-  // like `-D`, a code like `L-3`, or a date like `01-06` — is never mistaken
-  // for a size.
+  // Space-separated aspect (Bridgestone `155 65 R12`) → `155/65R12`.
+  const sp = SIZE_SPACED_RE.exec(text);
+  if (sp) return `${sp[1]}/${sp[2]}${sp[3].toUpperCase()}${sp[4]}`.replace(/\s+/g, '');
+  // Bias / OTR / radial / diagonal without aspect (e.g. `12.00-24`, `10.00 R20`,
+  // `165 D14`). Guard the rim to a real tyre-rim diameter (8"–63") and the width
+  // to ≥2" so a stray dash — a grade suffix like `-D`, a code like `L-3`, or a
+  // date like `01-06` — is never mistaken for a size.
   const a = SIZE_ALT_RE.exec(text);
   if (a) {
     const rim = parseFloat(a[3]);
     const width = parseFloat(a[1]);
-    if (rim >= 8 && rim <= 63 && width >= 3) {
-      const sep = a[2].toUpperCase() === 'R' ? 'R' : '-';
+    if (rim >= 8 && rim <= 63 && width >= 2) {
+      const u = a[2].toUpperCase();
+      const sep = u === 'R' || u === 'D' || u === 'B' ? u : '-';
       return `${a[1]}${sep}${a[3]}`.replace(/\s+/g, '');
     }
   }
@@ -371,23 +401,37 @@ export function extractSize(text: string): string | null {
 }
 
 /**
- * Extract the tread pattern from a free-text string by elimination: strip the
- * size, the load+speed code and junk, then take the short letters-first code
- * that remains (preferring one containing a digit, e.g. `CC6` over `COMC`).
+ * Extract the tread pattern from a free-text/combined cell. Strategy:
+ *   1. Strip everything we can identify — every size form, the ply rating
+ *      (`16PR`), the load+speed code (`151F`, `152/148J`), grade suffixes
+ *      (`-D`, `-K`), tube-type words (`TL`/`TT`/`TTF`) and junk (`#`, `_`).
+ *   2. If a short letters-first code with a digit survives (Continental `CC6`,
+ *      `UC6`, `PC6`), that IS the pattern.
+ *   3. Otherwise the descriptive words that remain are the model name — which
+ *      is frequently multi-word (`TERRA MT`, `JET ML HD`, `ULTIMA HI^LIFE`,
+ *      `AMAZER 4G LIFE`). Return up to four such words.
  */
 export function extractPattern(text: string): string | null {
-  let s = ` ${text.toUpperCase()} `;
-  s = s.replace(SIZE_RE, ' ');
-  s = s.replace(LOAD_SPEED_RE, ' ');
-  s = s.replace(/#+|\*+/g, ' ');
+  let s = ` ${text.toUpperCase().replace(/_/g, ' ')} `;
+  s = s.replace(SIZE_RE_G, ' ').replace(SIZE_SPACED_RE_G, ' ').replace(SIZE_ALT_RE_G, ' ');
+  s = s.replace(/\([^)]*\)/g, ' '); // (TTF), (TT), (Enliten)
+  s = s.replace(/\b\d{1,2}\s?PR\b/g, ' '); // ply rating 16PR / 18 PR
+  s = s.replace(LOAD_SPEED_RE, ' '); // load + speed 151F, 152/148J, 100T
+  s = s.replace(/-\s*[A-Z]\b/g, ' '); // grade suffix -D, -K
+  s = s.replace(/\b(TUBELESS|TUBE\s?TYPE|TUBETYPE|TTF|TTL|TL|TT|TO)\b/g, ' ');
+  s = s.replace(/[#*]+/g, ' ');
   const toks = s
     .split(/\s+/)
     .map((t) => t.trim())
-    .filter((t) => /^[A-Z]/.test(t));
+    .filter((t) => /^[A-Z0-9]/.test(t));
+  // A short coded token wins (Continental prints e.g. `COMC CC6` → `CC6`).
   const coded = toks.filter((t) => PATTERN_TOKEN_RE.test(t) && /\d/.test(t));
   if (coded.length) return coded[coded.length - 1];
-  const letters = toks.filter((t) => FAMILY_TOKEN_RE.test(t));
-  return letters.length ? letters[letters.length - 1] : null;
+  // Otherwise assemble the model name from the descriptive words that survive.
+  const words = toks.filter((t) => /[A-Z]/.test(t) && t.length >= 2 && !/^\d+$/.test(t) && !PATTERN_NOISE_RE.test(t));
+  if (words.length) return words.slice(0, 4).join(' ');
+  const fam = toks.filter((t) => FAMILY_TOKEN_RE.test(t));
+  return fam.length ? fam[fam.length - 1] : null;
 }
 
 /** Text fields on a row, with size/spec-named columns tried first. */
@@ -409,14 +453,18 @@ export function tyreSize(fields: RecordField[]): string | null {
 
 /** Detect the tread pattern for a row: a named Pattern column, else by elimination. */
 export function tyrePattern(fields: RecordField[]): string | null {
-  // Layer 1: a real, explicitly named "Pattern"/"Tread" column.
+  // Layer 1: a real, explicitly named "Pattern"/"Tread"/"Model" column — use its
+  // value verbatim (cleaned), so multi-word names survive (`Earth-1 Max`,
+  // `GT Max`, `Sturdo`, `B250 (Enliten)`, `VFM1`).
   const named = fields.find(
     (f) => PATTERN_NAME_RE.test(f.name) && f.value != null && typeof f.value !== 'number' && String(f.value).trim(),
   );
   if (named) {
-    const parts = String(named.value).trim().toUpperCase().split(/\s+/);
-    const tok = parts.find((t) => PATTERN_TOKEN_RE.test(t)) ?? parts[0];
-    if (tok && tok.length <= 8 && !SIZE_RE.test(tok)) return tok;
+    const raw = String(named.value)
+      .replace(/[#*]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (raw && !SIZE_RE.test(raw) && !SIZE_SPACED_RE.test(raw)) return raw.slice(0, 40);
   }
   // Layer 2: strip size/load/speed/junk from the size-or-article cell.
   for (const f of textFields(fields)) {

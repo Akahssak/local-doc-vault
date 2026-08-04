@@ -1,10 +1,11 @@
-import { useDeferredValue, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useDocuments } from '@/hooks/useDocuments';
 import { usePricing } from '@/hooks/usePricing';
 import { useRecordEdits } from '@/hooks/useRecordEdits';
 import { parseAllRecords } from '@/lib/data/records';
 import { applyRecordEdits } from '@/lib/data/edits';
+import { persistEditedSidecars } from '@/lib/data/persistEdits';
 import { computeAnalytics } from '@/lib/data/analytics';
 import { computeRowPricing } from '@/lib/data/pricing';
 import { applyDataFilter, computeFacets, DEFAULT_DATA_FILTER } from '@/lib/data/filter';
@@ -22,6 +23,7 @@ import { DataFilterBar } from '@/components/dashboard/DataFilterBar';
 import { DocumentList } from '@/components/DocumentList';
 import { DocumentViewer } from '@/components/DocumentViewer';
 import { SettingsDialog } from '@/components/SettingsDialog';
+import { VaultStorageDialog } from '@/components/VaultStorageDialog';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import {
   AlertIcon,
@@ -61,6 +63,7 @@ export function VaultApp() {
   const [docQuery, setDocQuery] = useState('');
   const [selection, setSelection] = useState<Selection | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [storageOpen, setStorageOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<StoredDocument | null>(null);
 
   const opfsOk = useMemo(() => isOpfsSupported(), []);
@@ -76,6 +79,23 @@ export function VaultApp() {
   // on top of the auto-extracted rows so every downstream view — facets,
   // filters, KPIs, charts and the export — reflects exactly what they edited.
   const records = useMemo(() => applyRecordEdits(allRecords, edits.edits), [allRecords, edits.edits]);
+
+  // Mirror hand-corrections into each document's JSON sidecar (debounced), so
+  // the saved .json files carry the changed data — not just the in-app store.
+  const persistedDocs = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!edits.loaded) return;
+    const handle = window.setTimeout(() => {
+      void persistEditedSidecars(docs, contents, records, persistedDocs.current);
+    }, 700);
+    return () => window.clearTimeout(handle);
+  }, [edits.loaded, edits.edits, records, docs, contents]);
+
+  // The edited rows for the open document, color-coded in the viewer's JSON tab.
+  const selectedDocRecords = useMemo(
+    () => (selection ? records.filter((r) => r.docId === selection.doc.id) : []),
+    [selection, records],
+  );
 
   // Full-dataset rollups (used for the filter bar's document chips).
   const allAnalytics = useMemo(() => computeAnalytics(records), [records]);
@@ -262,6 +282,15 @@ export function VaultApp() {
             </span>
             <button
               type="button"
+              onClick={() => setStorageOpen(true)}
+              className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/40 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-slate-800"
+              title="Browse the on-device folder where every company's files are stored"
+            >
+              <FolderIcon className="h-4 w-4" />
+              Browse folder
+            </button>
+            <button
+              type="button"
               onClick={exportGlobalJson}
               disabled={globalIndex.documentCount === 0}
               className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/40 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-slate-800 disabled:opacity-40"
@@ -441,6 +470,7 @@ export function VaultApp() {
         <DocumentViewer
           doc={selection.doc}
           json={selectedJson}
+          records={selectedDocRecords}
           searchOptions={dataSearchOptions}
           initialPage={selection.page}
           onClose={() => setSelection(null)}
@@ -458,6 +488,14 @@ export function VaultApp() {
           onClose={() => setSettingsOpen(false)}
           onWipe={wipeAll}
           docCount={docs.length}
+          refreshKey={docs.length}
+        />
+      )}
+
+      {storageOpen && (
+        <VaultStorageDialog
+          onClose={() => setStorageOpen(false)}
+          folderName={manifest?.folderName ?? 'vault'}
           refreshKey={docs.length}
         />
       )}

@@ -55,6 +55,36 @@ export interface DocumentJson {
   extractedAt: string;
   /** Metadata dictionary from the source (pdf.js info) when available. */
   info?: Record<string, unknown>;
+  /**
+   * Rows the admin has hand-corrected, written back into this document's own
+   * JSON sidecar so the saved file on disk carries the edited data (not just
+   * the in-app store). Present only once at least one row has been edited.
+   */
+  editedRecords?: PersistedRecord[];
+}
+
+/**
+ * A single business row persisted into a document's JSON sidecar. `editedFields`
+ * lists which values the admin changed by hand, so an external reader can tell
+ * corrections apart from auto-extracted values.
+ */
+export interface PersistedRecord {
+  id: string;
+  page: number;
+  line: number;
+  brand: string | null;
+  code: string | null;
+  size: string | null;
+  pattern: string | null;
+  tube: string | null;
+  category: string | null;
+  dp: number | null;
+  rcp: number | null;
+  tags: string[];
+  /** Names of the fields on this row the user edited (e.g. `["size","pattern"]`). */
+  editedFields: EditableField[];
+  /** ISO timestamp when this row's edit was saved. */
+  savedAt: string;
 }
 
 export type DocStatus = 'processing' | 'ready' | 'error';
@@ -63,8 +93,21 @@ export type DocStatus = 'processing' | 'ready' | 'error';
 export interface StoredDocument {
   id: string;
   fileName: string;
-  /** Path of the original binary inside the OPFS vault directory. */
+  /**
+   * Company / brand this document belongs to. Every company gets its own
+   * folder in the vault; this is that folder's display name.
+   */
+  company: string;
+  /**
+   * Path of the original binary inside the OPFS vault directory, of the form
+   * `<Company>/<original file name>` — the file keeps its real name.
+   */
   opfsPath: string;
+  /**
+   * Path of the extracted JSON stored right next to the source
+   * (`<Company>/<original file name>.json`). Undefined when extraction failed.
+   */
+  jsonPath?: string;
   mimeType: string;
   /** Size in bytes. */
   size: number;
@@ -146,6 +189,8 @@ export interface GlobalIndexPage {
 export interface GlobalIndexEntry {
   id: string;
   fileName: string;
+  /** Company folder this document is filed under. */
+  company: string;
   mimeType: string;
   /** Lowercased extension incl. dot, e.g. ".pdf" ("" if none). */
   ext: string;

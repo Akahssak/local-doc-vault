@@ -35,10 +35,37 @@ async function getVaultDir(): Promise<FileSystemDirectoryHandle> {
   return root.getDirectoryHandle(APP_CONFIG.vaultDir, { create: true });
 }
 
+/**
+ * Split a vault-relative path such as `Continental/list.pdf` into its parent
+ * directory segments and the final file name. Empty/whitespace segments are
+ * dropped so a stray leading/trailing slash never creates a nameless folder.
+ */
+function splitPath(path: string): { segments: string[]; name: string } {
+  const parts = path.split('/').map((p) => p.trim()).filter(Boolean);
+  const name = parts.pop() ?? path;
+  return { segments: parts, name };
+}
+
+/**
+ * Walk the nested company sub-folders under the vault root, optionally creating
+ * each one. This is what lets every company have its own directory.
+ */
+async function resolveDir(
+  segments: string[],
+  create: boolean,
+): Promise<FileSystemDirectoryHandle> {
+  let dir = await getVaultDir();
+  for (const seg of segments) {
+    dir = await dir.getDirectoryHandle(seg, { create });
+  }
+  return dir;
+}
+
 /** Write bytes to `path` inside the private vault directory (overwrites). */
 export async function writeFile(path: string, data: Blob | ArrayBuffer): Promise<void> {
-  const dir = await getVaultDir();
-  const handle = await dir.getFileHandle(path, { create: true });
+  const { segments, name } = splitPath(path);
+  const dir = await resolveDir(segments, true);
+  const handle = await dir.getFileHandle(name, { create: true });
   const writable = await handle.createWritable();
   try {
     await writable.write(data);
@@ -49,16 +76,18 @@ export async function writeFile(path: string, data: Blob | ArrayBuffer): Promise
 
 /** Read a stored file back as a `File` (a Blob with name/size/type). */
 export async function readFile(path: string): Promise<File> {
-  const dir = await getVaultDir();
-  const handle = await dir.getFileHandle(path);
+  const { segments, name } = splitPath(path);
+  const dir = await resolveDir(segments, false);
+  const handle = await dir.getFileHandle(name);
   return handle.getFile();
 }
 
 /** Delete a stored file. Missing files are ignored. */
 export async function deleteFile(path: string): Promise<void> {
   try {
-    const dir = await getVaultDir();
-    await dir.removeEntry(path);
+    const { segments, name } = splitPath(path);
+    const dir = await resolveDir(segments, false);
+    await dir.removeEntry(name);
   } catch {
     /* already gone */
   }
@@ -67,19 +96,40 @@ export async function deleteFile(path: string): Promise<void> {
 /** True if a file with `path` exists inside the vault. */
 export async function fileExists(path: string): Promise<boolean> {
   try {
-    const dir = await getVaultDir();
-    await dir.getFileHandle(path);
+    const { segments, name } = splitPath(path);
+    const dir = await resolveDir(segments, false);
+    await dir.getFileHandle(name);
     return true;
   } catch {
     return false;
   }
 }
 
+/**
+ * Return a file name that does not yet exist inside `dirPath`, keeping the
+ * ORIGINAL name whenever possible. Only when a *different* file already occupies
+ * that name is a ` (2)`, ` (3)`… suffix added — so the company's documents keep
+ * their real names and nothing is silently overwritten.
+ */
+export async function uniqueName(dirPath: string, name: string): Promise<string> {
+  const join = (n: string) => (dirPath ? `${dirPath}/${n}` : n);
+  if (!(await fileExists(join(name)))) return name;
+  const dot = name.lastIndexOf('.');
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  const ext = dot > 0 ? name.slice(dot) : '';
+  for (let i = 2; i < 1000; i++) {
+    const candidate = `${stem} (${i})${ext}`;
+    if (!(await fileExists(join(candidate)))) return candidate;
+  }
+  return `${stem}-${Date.now()}${ext}`;
+}
+
 /** Read a UTF-8 text file from the vault, or `null` if it does not exist. */
 export async function readTextFile(path: string): Promise<string | null> {
   try {
-    const dir = await getVaultDir();
-    const handle = await dir.getFileHandle(path);
+    const { segments, name } = splitPath(path);
+    const dir = await resolveDir(segments, false);
+    const handle = await dir.getFileHandle(name);
     return await (await handle.getFile()).text();
   } catch {
     return null;
@@ -114,6 +164,54 @@ export async function getStorageEstimate(): Promise<{ usage: number; quota: numb
     return { usage, quota };
   }
   return { usage: 0, quota: 0 };
+}
+
+/** A node in the vault folder tree — either a folder (with children) or a file. */
+export interface VaultNode {
+  name: string;
+  path: string;
+  kind: 'file' | 'directory';
+  size?: number;
+  children?: VaultNode[];
+}
+
+async function walkDir(dir: FileSystemDirectoryHandle, prefix: string): Promise<VaultNode[]> {
+  const nodes: VaultNode[] = [];
+  // `entries()` is an async iterator of [name, handle] not yet in the TS lib defs.
+  const entries = (
+    dir as unknown as { entries(): AsyncIterableIterator<[string, FileSystemHandle]> }
+  ).entries();
+  for await (const [name, handle] of entries) {
+    const path = prefix ? `${prefix}/${name}` : name;
+    if (handle.kind === 'directory') {
+      nodes.push({
+        name,
+        path,
+        kind: 'directory',
+        children: await walkDir(handle as FileSystemDirectoryHandle, path),
+      });
+    } else {
+      const file = await (handle as FileSystemFileHandle).getFile();
+      nodes.push({ name, path, kind: 'file', size: file.size });
+    }
+  }
+  // Folders first, then files; each group sorted alphabetically.
+  nodes.sort((a, b) => {
+    if (a.kind !== b.kind) return a.kind === 'directory' ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  return nodes;
+}
+
+/**
+ * Recursively list everything inside the vault folder as a tree:
+ * company folders → original files + their `.json` sidecars.
+ * Returns an empty array when OPFS isn't supported.
+ */
+export async function listVaultTree(): Promise<VaultNode[]> {
+  if (!isOpfsSupported()) return [];
+  const root = await getVaultDir();
+  return walkDir(root, '');
 }
 
 /**

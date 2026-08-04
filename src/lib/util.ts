@@ -20,6 +20,23 @@ export function extOf(name: string): string {
   return i >= 0 ? name.slice(i).toLowerCase() : '';
 }
 
+/**
+ * Turn a company / brand name into a safe OPFS folder name. Strips characters
+ * that are illegal in file-system paths, collapses whitespace and never returns
+ * an empty string (falls back to "Unknown"), so every document can be filed
+ * under a folder named after its company.
+ */
+export function sanitizeFolderName(name: string): string {
+  const cleaned = name
+    .normalize('NFKD')
+    .replace(/[\\/:*?"<>|]+/g, ' ') // path-illegal characters
+    .replace(/[\u0000-\u001f]+/g, ' ') // control characters
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[. ]+$/g, ''); // no trailing dot/space (invalid on Windows)
+  return cleaned || 'Unknown';
+}
+
 export function formatBytes(bytes: number): string {
   if (!bytes) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];

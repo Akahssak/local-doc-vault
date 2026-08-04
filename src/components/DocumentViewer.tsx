@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { DocumentJson, SearchOptions, StoredDocument } from '@/types';
+import type { DataRecord, DocumentJson, EditableField, SearchOptions, StoredDocument } from '@/types';
 import { compileQuery, getRanges } from '@/lib/search/search';
 import { getOriginalUrl } from '@/lib/ingest';
 import { Highlight } from '@/components/Highlight';
@@ -16,6 +16,8 @@ import { formatBytes, formatDate, classNames } from '@/lib/util';
 interface Props {
   doc: StoredDocument;
   json: DocumentJson | undefined;
+  /** Parsed business rows for this document, with the admin's edits applied. */
+  records?: DataRecord[];
   searchOptions: SearchOptions;
   initialPage?: number;
   onClose: () => void;
@@ -23,9 +25,61 @@ interface Props {
   onSaveTags: (doc: StoredDocument, tags: string[]) => void;
 }
 
+/** Fields the user can edit — highlighted amber in the JSON view when changed. */
+const EDITABLE_FIELDS: EditableField[] = ['brand', 'size', 'pattern', 'tube', 'rcp'];
+/** Cap the color-coded record cards so huge lists stay responsive. */
+const MAX_RECORD_CARDS = 400;
+
+/** One business row rendered as pretty JSON, with edited values shown in amber. */
+function RecordJson({ record }: { record: DataRecord }) {
+  const rows: Array<{ k: string; v: string; edited: boolean }> = [];
+  const add = (k: string, v: unknown, editable = false) =>
+    rows.push({
+      k,
+      v: JSON.stringify(v ?? null),
+      edited: editable && !!record.edited?.[k as EditableField],
+    });
+  add('id', record.id);
+  add('brand', record.brand ?? null, true);
+  add('code', record.code);
+  add('size', record.size ?? null, true);
+  add('pattern', record.pattern ?? null, true);
+  add('tube', record.tube ?? null, true);
+  add('rcp', record.rcp ?? null, true);
+  add('dp', record.dp ?? null);
+  add('category', record.category ?? null);
+  add('tags', record.tags ?? []);
+  const anyEdited = EDITABLE_FIELDS.some((f) => record.edited?.[f]);
+  return (
+    <div
+      className={classNames(
+        'rounded-lg border p-3',
+        anyEdited ? 'border-amber-500/40 bg-amber-950/10' : 'border-slate-800 bg-slate-950/70',
+      )}
+    >
+      <span className="text-slate-500">{'{'}</span>
+      {rows.map((r, i) => (
+        <div key={r.k} className="pl-4">
+          <span className="text-sky-300">&quot;{r.k}&quot;</span>
+          <span className="text-slate-500">: </span>
+          <span className={r.edited ? 'font-semibold text-amber-300' : 'text-slate-300'}>{r.v}</span>
+          {i < rows.length - 1 && <span className="text-slate-500">,</span>}
+          {r.edited && (
+            <span className="ml-2 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
+              edited
+            </span>
+          )}
+        </div>
+      ))}
+      <span className="text-slate-500">{'}'}</span>
+    </div>
+  );
+}
+
 export function DocumentViewer({
   doc,
   json,
+  records,
   searchOptions,
   initialPage,
   onClose,
@@ -61,6 +115,18 @@ export function DocumentViewer({
     () => tags.join('\u0000') !== doc.tags.join('\u0000'),
     [tags, doc.tags],
   );
+
+  // Records shown in the JSON tab: edited rows always come first (and are never
+  // truncated); the rest fill the remaining budget so large lists stay snappy.
+  const recordCards = useMemo(() => {
+    const list = records ?? [];
+    const isEdited = (r: DataRecord) => !!(r.edited && Object.keys(r.edited).length);
+    const editedRows = list.filter(isEdited);
+    const plainRows = list.filter((r) => !isEdited(r));
+    const budget = Math.max(0, MAX_RECORD_CARDS - editedRows.length);
+    const shown = [...editedRows, ...plainRows.slice(0, budget)];
+    return { shown, total: list.length, editedCount: editedRows.length, hidden: list.length - shown.length };
+  }, [records]);
 
   function addTag() {
     const value = tagInput.trim().replace(/,$/, '').trim();
@@ -217,9 +283,39 @@ export function DocumentViewer({
           )}
 
           {view === 'json' ? (
-            <pre className="whitespace-pre-wrap break-words rounded-lg bg-slate-950/70 p-3 font-mono text-xs leading-relaxed text-slate-300">
-              {json ? JSON.stringify(json, null, 2) : 'No extracted content.'}
-            </pre>
+            recordCards.total > 0 ? (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-400">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-amber-400" /> Edited by you
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-slate-500" /> Auto-extracted
+                  </span>
+                  <span className="ml-auto tabular-nums">
+                    {recordCards.editedCount > 0 && (
+                      <span className="text-amber-300">{recordCards.editedCount} edited · </span>
+                    )}
+                    {recordCards.total} rows
+                  </span>
+                </div>
+                <div className="space-y-2 font-mono text-xs leading-relaxed">
+                  {recordCards.shown.map((r) => (
+                    <RecordJson key={r.id} record={r} />
+                  ))}
+                </div>
+                {recordCards.hidden > 0 && (
+                  <p className="pt-1 text-center text-[11px] text-slate-500">
+                    +{recordCards.hidden} more auto-extracted rows not shown · use “Download JSON” for
+                    the full file
+                  </p>
+                )}
+              </div>
+            ) : (
+              <pre className="whitespace-pre-wrap break-words rounded-lg bg-slate-950/70 p-3 font-mono text-xs leading-relaxed text-slate-300">
+                {json ? JSON.stringify(json, null, 2) : 'No extracted content.'}
+              </pre>
+            )
           ) : !json || json.pages.length === 0 ? (
             <p className="text-sm text-slate-500">No extractable text for this file.</p>
           ) : (

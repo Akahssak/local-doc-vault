@@ -15,7 +15,7 @@
  *     total / final price).
  *   - Everything else (specs like "195/65R15", patterns, letters) is the label.
  */
-import type { DataRecord, DocCell, DocumentJson } from '@/types';
+import type { DataRecord, DocCell, DocumentJson, EditableField, PersistedRecord } from '@/types';
 import { APP_CONFIG } from '@/config';
 import {
   dealerPrice,
@@ -222,4 +222,27 @@ export function parseAllRecords(
     all.push(...parseDocumentRecords(docId, json));
   }
   return all;
+}
+
+/**
+ * Flatten an (edited) business row into the compact shape stored inside a
+ * document's JSON sidecar, so hand-corrections are saved in the JSON itself.
+ */
+export function toPersistedRecord(r: DataRecord): PersistedRecord {
+  return {
+    id: r.id,
+    page: r.page,
+    line: r.line,
+    brand: r.brand ?? null,
+    code: r.code,
+    size: r.size ?? null,
+    pattern: r.pattern ?? null,
+    tube: r.tube ?? null,
+    category: r.category ?? null,
+    dp: r.dp ?? null,
+    rcp: r.rcp ?? null,
+    tags: r.tags ?? [],
+    editedFields: r.edited ? (Object.keys(r.edited) as EditableField[]) : [],
+    savedAt: new Date().toISOString(),
+  };
 }
