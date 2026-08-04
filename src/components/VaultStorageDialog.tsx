@@ -7,10 +7,21 @@ import {
   CodeIcon,
   DownloadIcon,
   FileIcon,
+  FilterIcon,
   FolderIcon,
+  SearchIcon,
   SpinnerIcon,
 } from '@/components/Icons';
 import { toast } from '@/components/Toast';
+
+/**
+ * A tiny JSON file kept in the vault root that remembers recent searches so the
+ * browser can suggest them (debounced) next time it opens. Using the vault
+ * (OPFS) as the single common store means both edit-detection AND the search
+ * history come from the same on-device place.
+ */
+const SEARCH_HISTORY_FILE = '_search-history.json';
+const MAX_HISTORY = 8;
 
 interface Props {
   onClose: () => void;
@@ -70,6 +81,52 @@ async function collectEditedJsonPaths(nodes: VaultNode[]): Promise<Set<string>> 
     }),
   );
   return edited;
+}
+
+/** Hide internal bookkeeping files (like the search-history JSON) from the tree. */
+function pruneHidden(nodes: VaultNode[]): VaultNode[] {
+  return nodes.filter((n) => n.name !== SEARCH_HISTORY_FILE);
+}
+
+/**
+ * Filter the tree by a name query and/or the "edited only" toggle. A folder is
+ * kept when any descendant survives; if the folder name itself matches the
+ * query, its children are kept without also needing to match the text.
+ */
+function filterTree(
+  nodes: VaultNode[],
+  query: string,
+  editedOnly: boolean,
+  editedPaths: Set<string>,
+): VaultNode[] {
+  const needle = query.trim().toLowerCase();
+  const out: VaultNode[] = [];
+  for (const n of nodes) {
+    if (n.kind === 'directory') {
+      const nameMatch = needle ? n.name.toLowerCase().includes(needle) : false;
+      const kids = filterTree(n.children ?? [], nameMatch ? '' : query, editedOnly, editedPaths);
+      if (kids.length > 0) out.push({ ...n, children: kids });
+    } else {
+      const isJson = n.name.toLowerCase().endsWith('.json');
+      const passEdited = !editedOnly || (isJson && editedPaths.has(n.path));
+      const passQuery = !needle || n.name.toLowerCase().includes(needle);
+      if (passEdited && passQuery) out.push(n);
+    }
+  }
+  return out;
+}
+
+/** Load the saved search terms from the vault (empty when missing). */
+async function loadSearchHistory(): Promise<string[]> {
+  const data = await opfs.readJson<{ queries?: string[] }>(SEARCH_HISTORY_FILE).catch(() => null);
+  return Array.isArray(data?.queries) ? data!.queries : [];
+}
+
+/** Persist the search terms back into the vault JSON. */
+async function saveSearchHistory(list: string[]): Promise<void> {
+  await opfs
+    .writeJson(SEARCH_HISTORY_FILE, { queries: list, updatedAt: new Date().toISOString() })
+    .catch(() => {});
 }
 
 function TreeItem({
@@ -155,6 +212,12 @@ export function VaultStorageDialog({ onClose, folderName, refreshKey }: Props) {
   const [editedPaths, setEditedPaths] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
+  // Search + filter state.
+  const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [editedOnly, setEditedOnly] = useState(false);
+  const [history, setHistory] = useState<string[]>([]);
+
   useEffect(() => {
     let alive = true;
     setLoading(true);
@@ -162,9 +225,10 @@ export function VaultStorageDialog({ onClose, folderName, refreshKey }: Props) {
       .listVaultTree()
       .then(async (t) => {
         if (!alive) return;
-        setTree(t);
+        const visible = pruneHidden(t);
+        setTree(visible);
         // Find which .json sidecars hold manual edits so we can color them amber.
-        const edited = await collectEditedJsonPaths(t);
+        const edited = await collectEditedJsonPaths(visible);
         if (alive) setEditedPaths(edited);
       })
       .catch(() => {
@@ -178,6 +242,36 @@ export function VaultStorageDialog({ onClose, folderName, refreshKey }: Props) {
     };
   }, [refreshKey]);
 
+  // Load the remembered searches once, straight from the vault JSON.
+  useEffect(() => {
+    let alive = true;
+    loadSearchHistory().then((h) => alive && setHistory(h));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Debounce the raw input: only after the user pauses (300ms) do we apply the
+  // filter and remember the term. This keeps typing smooth on large vaults.
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setDebouncedQuery(query);
+      const term = query.trim();
+      if (term.length >= 2) {
+        setHistory((prev) => {
+          if (prev[0]?.toLowerCase() === term.toLowerCase()) return prev;
+          const next = [
+            term,
+            ...prev.filter((x) => x.toLowerCase() !== term.toLowerCase()),
+          ].slice(0, MAX_HISTORY);
+          void saveSearchHistory(next);
+          return next;
+        });
+      }
+    }, 300);
+    return () => clearTimeout(id);
+  }, [query]);
+
   const stats = useMemo(() => {
     const nodes = tree ?? [];
     const folders = nodes.filter((n) => n.kind === 'directory').length;
@@ -189,6 +283,13 @@ export function VaultStorageDialog({ onClose, folderName, refreshKey }: Props) {
     countFiles(nodes);
     return { folders, files, size: totalSize(nodes) };
   }, [tree]);
+
+  // The tree actually shown, after applying the search term + edited-only filter.
+  const view = useMemo(() => {
+    if (!tree) return null;
+    if (!debouncedQuery.trim() && !editedOnly) return tree;
+    return filterTree(tree, debouncedQuery, editedOnly, editedPaths);
+  }, [tree, debouncedQuery, editedOnly, editedPaths]);
 
   return (
     <div
@@ -240,6 +341,51 @@ export function VaultStorageDialog({ onClose, folderName, refreshKey }: Props) {
           )}
         </div>
 
+        {/* Search + filter toolbar. The term is remembered in the vault JSON and
+            offered back as suggestions through the datalist below. */}
+        {tree && tree.length > 0 && (
+          <div className="flex items-center gap-2 border-b border-slate-800 px-3 py-2">
+            <div className="relative flex-1">
+              <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                list="vault-search-history"
+                placeholder="Search files and folders…"
+                className="input !py-1.5 !pl-9 !pr-8 text-sm"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery('')}
+                  title="Clear"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-500 hover:text-white"
+                >
+                  <CloseIcon className="h-4 w-4" />
+                </button>
+              )}
+              <datalist id="vault-search-history">
+                {history.map((h) => (
+                  <option key={h} value={h} />
+                ))}
+              </datalist>
+            </div>
+            <button
+              type="button"
+              onClick={() => setEditedOnly((v) => !v)}
+              title="Show only JSON files that contain your edits"
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition ${
+                editedOnly
+                  ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
+                  : 'border-slate-700 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+              }`}
+            >
+              <FilterIcon className="h-3.5 w-3.5" />
+              Edited only
+            </button>
+          </div>
+        )}
+
         <div className="flex-1 overflow-auto p-2">
           {loading ? (
             <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500">
@@ -253,9 +399,21 @@ export function VaultStorageDialog({ onClose, folderName, refreshKey }: Props) {
                 Upload a document to see it stored here by company.
               </p>
             </div>
+          ) : view && view.length === 0 ? (
+            <div className="grid place-items-center px-6 py-16 text-center">
+              <SearchIcon className="mb-3 h-10 w-10 text-slate-600" />
+              <p className="text-sm text-slate-400">
+                {editedOnly ? 'No edited JSON files yet.' : 'No files match your search.'}
+              </p>
+              <p className="text-xs text-slate-600">
+                {editedOnly
+                  ? 'Edit a row in the data table and it will show here in amber.'
+                  : 'Try a different word, or clear the filter.'}
+              </p>
+            </div>
           ) : (
             <div className="space-y-0.5">
-              {tree.map((node) => (
+              {(view ?? []).map((node) => (
                 <TreeItem key={node.path} node={node} depth={0} editedPaths={editedPaths} />
               ))}
             </div>
