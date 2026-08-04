@@ -6,10 +6,12 @@ import { toast } from '@/components/Toast';
 import {
   connectSharedFolder,
   disconnectSharedFolder,
+  getPathHint,
   getSharedFolderName,
   isSharedFolderSupported,
   pullFromSharedFolder,
   pushToSharedFolder,
+  setPathHint,
 } from '@/lib/storage/sharedFolder';
 
 interface Props {
@@ -31,10 +33,19 @@ export function SettingsDialog({ onClose, onWipe, docCount, refreshKey }: Props)
   const [folderName, setFolderName] = useState<string | null>(null);
   const [folderBusy, setFolderBusy] = useState<null | 'connect' | 'push' | 'pull'>(null);
   const [pullArmed, setPullArmed] = useState(false);
+  const [pathHint, setPathHintInput] = useState('');
 
   useEffect(() => {
-    if (sharedSupported) getSharedFolderName().then(setFolderName);
+    if (sharedSupported) {
+      getSharedFolderName().then(setFolderName);
+      getPathHint().then((h) => setPathHintInput(h ?? ''));
+    }
   }, [sharedSupported]);
+
+  async function handleSavePathHint() {
+    await setPathHint(pathHint);
+    toast('Folder location note saved. Push to share it with other browsers.', 'success');
+  }
 
   async function handleConnectFolder() {
     setFolderBusy('connect');
@@ -163,6 +174,31 @@ export function SettingsDialog({ onClose, onWipe, docCount, refreshKey }: Props)
                     <FolderIcon className="h-3.5 w-3.5" /> Connected: {folderName}
                   </p>
                 )}
+
+                <div className="mt-3">
+                  <label className="mb-1 block text-xs font-medium text-slate-400">
+                    Folder location note (helps others pick the right folder)
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      className="input flex-1"
+                      value={pathHint}
+                      onChange={(e) => setPathHintInput(e.target.value)}
+                      placeholder="e.g. D:\TyreVault"
+                    />
+                    <button
+                      className="btn-secondary"
+                      onClick={handleSavePathHint}
+                      disabled={folderBusy !== null}
+                    >
+                      Save note
+                    </button>
+                  </div>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Browsers can't read the real path, so type it here once. It syncs on Push and is
+                    shown on the folder-pick screen in other browsers.
+                  </p>
+                </div>
 
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button

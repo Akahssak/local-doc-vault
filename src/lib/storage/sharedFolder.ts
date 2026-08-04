@@ -24,6 +24,8 @@ import * as opfs from '@/lib/storage/opfs';
 const HANDLE_KEY = 'sharedFolderHandle';
 const NAME_KEY = 'sharedFolderName';
 const SYNCED_AT_KEY = 'sharedFolderSyncedAt';
+/** Admin-typed real folder path (e.g. "D:\TyreVault") shown as a pick hint. */
+const PATH_HINT_KEY = 'sharedFolderPathHint';
 const SYNC_FILE = 'vault-sync.json';
 const META_FILE = 'vault-sync.meta.json';
 const ORIGINALS_DIR = 'originals';
@@ -54,6 +56,38 @@ export function isSharedFolderSupported(): boolean {
 export async function getSharedFolderName(): Promise<string | null> {
   const name = await db.getSetting<string>(NAME_KEY);
   return name ?? null;
+}
+
+/**
+ * The admin-typed real folder location (e.g. "D:\TyreVault"). Browsers cannot
+ * read the true path from the picker, so the admin records it once; it syncs in
+ * the vault and is shown on other browsers to make picking the folder easy.
+ */
+export async function getPathHint(): Promise<string | null> {
+  const fromDb = await db.getSetting<string>(PATH_HINT_KEY);
+  if (fromDb) return fromDb;
+  return getPathHintLocal();
+}
+
+/** Synchronous localStorage read, usable on the pre-login screen. */
+export function getPathHintLocal(): string | null {
+  try {
+    return localStorage.getItem(PATH_HINT_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Save the folder-location note (persists in the vault AND localStorage). */
+export async function setPathHint(value: string): Promise<void> {
+  const v = value.trim();
+  await db.setSetting(PATH_HINT_KEY, v || undefined);
+  try {
+    if (v) localStorage.setItem(PATH_HINT_KEY, v);
+    else localStorage.removeItem(PATH_HINT_KEY);
+  } catch {
+    /* ignore storage errors */
+  }
 }
 
 /** The saved handle from a previous session (may need permission re-granted). */
@@ -195,6 +229,15 @@ async function pullUsing(dir: DirHandle): Promise<{ folder: string; documents: n
 
   // Restore settings (includes the hashed admin password), documents, content.
   for (const s of snapshot.settings) await db.setSetting(s.key, s.value);
+
+  // Mirror the folder-location note to localStorage so the pre-login screen on
+  // this browser can show "select this folder" without unlocking first.
+  const hint = snapshot.settings.find((s) => s.key === PATH_HINT_KEY)?.value;
+  try {
+    if (typeof hint === 'string' && hint) localStorage.setItem(PATH_HINT_KEY, hint);
+  } catch {
+    /* ignore storage errors */
+  }
   for (const doc of snapshot.documents) await db.putDocument(doc);
   for (const rec of snapshot.content) await db.putContent(rec.id, rec.json);
 

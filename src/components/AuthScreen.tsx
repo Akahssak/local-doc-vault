@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { APP_CONFIG } from '@/config';
 import { ShieldIcon, SpinnerIcon, LockIcon, FolderIcon } from '@/components/Icons';
-import { adoptSharedFolder, isSharedFolderSupported } from '@/lib/storage/sharedFolder';
+import { adoptSharedFolder, getPathHintLocal, isSharedFolderSupported } from '@/lib/storage/sharedFolder';
 
 interface Props {
   mode: 'setup' | 'login';
@@ -19,6 +19,7 @@ export function AuthScreen({ mode }: Props) {
   const isSetup = mode === 'setup';
   const sharedSupported = isSharedFolderSupported();
   const [adoptBusy, setAdoptBusy] = useState(false);
+  const pathHint = getPathHintLocal();
 
   async function onAdopt() {
     setError(null);
@@ -194,6 +195,11 @@ export function AuthScreen({ mode }: Props) {
             <p className="mb-2 text-[11px] text-slate-500">
               Already set up this vault in another browser on this PC?
             </p>
+            {pathHint && (
+              <p className="mx-auto mb-2 max-w-xs rounded-md border border-brand-800/50 bg-brand-950/30 px-2 py-1.5 text-[11px] text-brand-200">
+                Select this folder: <span className="font-mono text-brand-100">{pathHint}</span>
+              </p>
+            )}
             <button
               type="button"
               className="btn-ghost mx-auto"
