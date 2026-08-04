@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { APP_CONFIG } from '@/config';
-import { ShieldIcon, SpinnerIcon, LockIcon } from '@/components/Icons';
+import { ShieldIcon, SpinnerIcon, LockIcon, FolderIcon } from '@/components/Icons';
+import { adoptSharedFolder, isSharedFolderSupported } from '@/lib/storage/sharedFolder';
 
 interface Props {
   mode: 'setup' | 'login';
@@ -16,6 +17,24 @@ export function AuthScreen({ mode }: Props) {
   const [resetArmed, setResetArmed] = useState(false);
 
   const isSetup = mode === 'setup';
+  const sharedSupported = isSharedFolderSupported();
+  const [adoptBusy, setAdoptBusy] = useState(false);
+
+  async function onAdopt() {
+    setError(null);
+    setAdoptBusy(true);
+    try {
+      const { documents } = await adoptSharedFolder();
+      setError(null);
+      // Reload so auth re-reads the shared credential and shows the login screen.
+      void documents;
+      window.location.reload();
+    } catch (err) {
+      const e = err as Error;
+      if (e.name !== 'AbortError') setError(e.message);
+      setAdoptBusy(false);
+    }
+  }
 
   async function onReset() {
     setBusy(true);
@@ -169,6 +188,27 @@ export function AuthScreen({ mode }: Props) {
         <p className="mt-6 text-center text-xs text-slate-500">
           Your files are stored privately on this device only. Nothing is uploaded to a server.
         </p>
+
+        {sharedSupported && !resetArmed && (
+          <div className="mt-4 border-t border-slate-800 pt-4 text-center">
+            <p className="mb-2 text-[11px] text-slate-500">
+              Already set up this vault in another browser on this PC?
+            </p>
+            <button
+              type="button"
+              className="btn-ghost mx-auto"
+              onClick={onAdopt}
+              disabled={busy || adoptBusy}
+            >
+              {adoptBusy ? (
+                <SpinnerIcon className="h-4 w-4 animate-spin" />
+              ) : (
+                <FolderIcon className="h-4 w-4" />
+              )}
+              Use a shared vault folder
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

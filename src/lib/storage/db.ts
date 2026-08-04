@@ -104,6 +104,11 @@ export function deleteContent(id: string): Promise<void> {
   return request(stores.content, 'readwrite', (s) => s.delete(id));
 }
 
+/** Every extracted-content row — used when exporting the vault to a shared folder. */
+export function getAllContent(): Promise<Array<{ id: string; json: DocumentJson }>> {
+  return request(stores.content, 'readonly', (s) => s.getAll());
+}
+
 /* ------------------------------ settings ------------------------------- */
 
 export async function getSetting<T = unknown>(key: string): Promise<T | undefined> {
@@ -117,6 +122,11 @@ export async function getSetting<T = unknown>(key: string): Promise<T | undefine
 
 export function setSetting<T = unknown>(key: string, value: T): Promise<IDBValidKey> {
   return request(stores.settings, 'readwrite', (s) => s.put({ key, value }));
+}
+
+/** Every settings row (incl. the hashed admin password) — used for shared-folder export. */
+export function getAllSettings(): Promise<Array<{ key: string; value: unknown }>> {
+  return request(stores.settings, 'readonly', (s) => s.getAll());
 }
 
 /* -------------------------------- reset -------------------------------- */
