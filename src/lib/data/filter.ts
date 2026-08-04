@@ -25,6 +25,7 @@ export const DEFAULT_DATA_FILTER: DataFilter = {
   minValue: null,
   maxValue: null,
   onlyWithValue: false,
+  editedOnly: false,
   hasCode: 'any',
   minPage: null,
   maxPage: null,
@@ -133,6 +134,7 @@ export function applyDataFilter(records: DataRecord[], filter: DataFilter): Data
     filter.minValue !== null ||
     filter.maxValue !== null ||
     filter.onlyWithValue ||
+    filter.editedOnly ||
     filter.hasCode !== 'any' ||
     filter.minPage !== null ||
     filter.maxPage !== null ||
@@ -162,6 +164,7 @@ export function applyDataFilter(records: DataRecord[], filter: DataFilter): Data
     if (filter.minRcp !== null && (r.rcp ?? -Infinity) < filter.minRcp) return false;
     if (filter.maxRcp !== null && (r.rcp ?? Infinity) > filter.maxRcp) return false;
     if (filter.onlyWithValue && r.value === null) return false;
+    if (filter.editedOnly && !(r.edited && Object.keys(r.edited).length > 0)) return false;
     if (filter.minValue !== null && (r.value ?? -Infinity) < filter.minValue) return false;
     if (filter.maxValue !== null && (r.value ?? Infinity) > filter.maxValue) return false;
     if (filter.hasCode === 'yes' && !r.code) return false;
@@ -203,6 +206,7 @@ export function activeDataFilterCount(f: DataFilter): number {
   if (f.minRcp !== null || f.maxRcp !== null) n++;
   if (f.minValue !== null || f.maxValue !== null) n++;
   if (f.onlyWithValue) n++;
+  if (f.editedOnly) n++;
   if (f.hasCode !== 'any') n++;
   if (f.minPage !== null || f.maxPage !== null) n++;
   if (f.minColumns > 0) n++;

@@ -495,6 +495,8 @@ export interface DataFilter {
   maxValue: number | null;
   /** Only rows that carry a numeric value. */
   onlyWithValue: boolean;
+  /** Only rows that have a manual edit on any column. */
+  editedOnly: boolean;
   /** Require / exclude rows that carry a SKU / article code. */
   hasCode: TriState;
   /** Page-number bounds (null = unbounded). */

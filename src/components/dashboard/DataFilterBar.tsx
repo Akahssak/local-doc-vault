@@ -378,6 +378,15 @@ export function DataFilterBar({ filter, onChange, documents, facets, error, resu
                 />
                 Only rows with a price
               </label>
+              <label className="flex h-8 cursor-pointer items-center gap-2 text-xs text-amber-300">
+                <input
+                  type="checkbox"
+                  checked={filter.editedOnly}
+                  onChange={(e) => set({ editedOnly: e.target.checked })}
+                  className="h-4 w-4 rounded border-amber-600/60 bg-slate-800 text-amber-500 focus:ring-amber-500"
+                />
+                Only edited rows
+              </label>
             </div>
 
             <div>
@@ -424,6 +433,7 @@ export function DataFilterBar({ filter, onChange, documents, facets, error, resu
                   minValue: null,
                   maxValue: null,
                   onlyWithValue: false,
+                  editedOnly: false,
                   hasCode: 'any',
                   minPage: null,
                   maxPage: null,
