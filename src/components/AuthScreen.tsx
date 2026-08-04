@@ -8,13 +8,29 @@ interface Props {
 }
 
 export function AuthScreen({ mode }: Props) {
-  const { setupPassword, login } = useAuth();
+  const { setupPassword, login, resetVault } = useAuth();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [resetArmed, setResetArmed] = useState(false);
 
   const isSetup = mode === 'setup';
+
+  async function onReset() {
+    setBusy(true);
+    setError(null);
+    try {
+      await resetVault();
+      setResetArmed(false);
+      setPassword('');
+      setConfirm('');
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -104,6 +120,51 @@ export function AuthScreen({ mode }: Props) {
             {isSetup ? 'Create vault' : 'Unlock'}
           </button>
         </form>
+
+        {!isSetup && (
+          <div className="mt-5 border-t border-slate-800 pt-4">
+            {!resetArmed ? (
+              <button
+                type="button"
+                className="w-full text-center text-xs text-slate-500 hover:text-rose-300"
+                onClick={() => {
+                  setError(null);
+                  setResetArmed(true);
+                }}
+                disabled={busy}
+              >
+                Forgot password? Reset this vault
+              </button>
+            ) : (
+              <div className="rounded-lg border border-rose-900/50 bg-rose-950/20 p-3">
+                <p className="text-xs text-rose-200">
+                  This permanently deletes <strong>all documents and settings</strong> on this
+                  device and removes the admin password, so you can create a brand-new vault. This
+                  cannot be undone.
+                </p>
+                <div className="mt-3 flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="btn-danger flex-1"
+                    onClick={onReset}
+                    disabled={busy}
+                  >
+                    {busy ? <SpinnerIcon className="h-4 w-4" /> : null}
+                    Erase &amp; start over
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    onClick={() => setResetArmed(false)}
+                    disabled={busy}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <p className="mt-6 text-center text-xs text-slate-500">
           Your files are stored privately on this device only. Nothing is uploaded to a server.

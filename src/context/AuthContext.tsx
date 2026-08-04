@@ -16,6 +16,7 @@ import {
   setAdminPassword,
   verifyAdminPassword,
 } from '@/lib/auth/auth';
+import { hardResetVault } from '@/lib/storage/reset';
 
 export type AuthStatus = 'loading' | 'needs-setup' | 'locked' | 'unlocked';
 
@@ -25,6 +26,8 @@ interface AuthContextValue {
   login: (password: string) => Promise<boolean>;
   logout: () => void;
   changePassword: (current: string, next: string) => Promise<void>;
+  /** Erase all on-device data (incl. password) and return to first-run setup. */
+  resetVault: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -69,9 +72,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await changeAdminPassword(current, next);
   }, []);
 
+  const resetVault = useCallback(async () => {
+    await hardResetVault();
+    logoutSession();
+    setStatus('needs-setup');
+  }, []);
+
   const value = useMemo<AuthContextValue>(
-    () => ({ status, setupPassword, login, logout, changePassword }),
-    [status, setupPassword, login, logout, changePassword],
+    () => ({ status, setupPassword, login, logout, changePassword, resetVault }),
+    [status, setupPassword, login, logout, changePassword, resetVault],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

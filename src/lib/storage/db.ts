@@ -128,3 +128,16 @@ export async function clearAllData(): Promise<void> {
     request(stores.content, 'readwrite', (s) => s.clear()),
   ]);
 }
+
+/**
+ * Nuke EVERYTHING in IndexedDB — documents, content AND settings (which holds
+ * the hashed admin password). Used by the "reset vault" flow when the admin has
+ * forgotten the password and needs to create a brand-new vault from scratch.
+ */
+export async function clearEverything(): Promise<void> {
+  await Promise.all([
+    request(stores.documents, 'readwrite', (s) => s.clear()),
+    request(stores.content, 'readwrite', (s) => s.clear()),
+    request(stores.settings, 'readwrite', (s) => s.clear()),
+  ]);
+}

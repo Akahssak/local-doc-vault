@@ -215,6 +215,21 @@ export async function listVaultTree(): Promise<VaultNode[]> {
 }
 
 /**
+ * Delete the ENTIRE vault folder (originals + sidecars + manifest) from OPFS.
+ * Best-effort: missing folders are ignored. Used by the "reset vault" flow so a
+ * locked-out admin can start over with a completely empty on-device store.
+ */
+export async function deleteVaultDir(): Promise<void> {
+  if (!isOpfsSupported()) return;
+  try {
+    const root = await navigator.storage.getDirectory();
+    await root.removeEntry(APP_CONFIG.vaultDir, { recursive: true });
+  } catch {
+    /* folder already gone */
+  }
+}
+
+/**
  * Ask the browser to make storage persistent so it is not evicted under
  * storage pressure. Returns whether persistence is granted.
  */
